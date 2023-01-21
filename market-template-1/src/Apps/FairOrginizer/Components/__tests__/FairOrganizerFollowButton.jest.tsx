@@ -1,0 +1,139 @@
+import { graphql } from "react-relay"
+import { setupTestWrapper } from "DevTools/setupTestWrapper"
+import { FairOrganizerFollowButton_Test_Query } from "__generated__/FairOrganizerFollowButton_Test_Query.graphql"
+import { FairOrganizerFollowButtonFragmentContainer } from "Apps/FairOrginizer/Components/FairOrganizerFollowButton"
+import { useSystemContext } from "System/useSystemContext"
+import { fairOrganizerFollowMutation } from "Apps/FairOrginizer/Mutations/FairOrganizerFollowMutation"
+import { useAuthDialog } from "Components/AuthDialog"
+
+jest.unmock("react-relay")
+jest.mock("Utils/openAuthModal")
+jest.mock("System/useSystemContext")
+jest.mock("Apps/FairOrginizer/Mutations/FairOrganizerFollowMutation")
+jest.mock("Components/AuthDialog/useAuthDialog")
+
+describe("FairOrganizerFollowButton", () => {
+  const { getWrapper } = setupTestWrapper<FairOrganizerFollowButton_Test_Query>(
+    {
+      Component: FairOrganizerFollowButtonFragmentContainer,
+      query: graphql`
+        query FairOrganizerFollowButton_Test_Query($id: String!)
+          @relay_test_operation {
+          fairOrganizer(id: $id) {
+            ...FairOrganizerFollowButton_fairOrganizer
+          }
+        }
+      `,
+      variables: { id: "fair" },
+    }
+  )
+
+  const mockUseSystemContext = useSystemContext as jest.Mock
+  const mockFairOrganizerFollowMutation = fairOrganizerFollowMutation as jest.Mock
+  const mockUseAuthDialog = useAuthDialog as jest.Mock
+
+  beforeAll(() => {
+    mockUseSystemContext.mockImplementation(() => ({
+      mediator: jest.fn(),
+      user: jest.fn(),
+    }))
+
+    mockUseAuthDialog.mockImplementation(() => ({
+      showAuthDialog: jest.fn(),
+    }))
+  })
+
+  it("renders correctly", () => {
+    const wrapper = getWrapper({
+      Profile: () => ({
+        isFollowed: false,
+      }),
+    })
+
+    expect(wrapper.text()).toContain("Follow")
+  })
+
+  it("toggles following label", () => {
+    const wrapper = getWrapper({
+      Profile: () => ({
+        isFollowed: true,
+      }),
+    })
+
+    expect(wrapper.text()).toContain("Following")
+  })
+
+  it("unauthenticated users trigger auth modal on click", () => {
+    mockUseSystemContext.mockImplementation(() => ({ user: null }))
+
+    const showAuthDialog = jest.fn()
+
+    mockUseAuthDialog.mockImplementation(() => ({ showAuthDialog }))
+
+    const wrapper = getWrapper({
+      FairOrganizer: () => ({
+        internalID: "fairOrganizerInternalID",
+        name: "fairOrganizerName",
+        slug: "faiOrganizerSlug",
+      }),
+    })
+    wrapper.simulate("click")
+
+    expect(showAuthDialog).toHaveBeenCalledWith({
+      current: {
+        analytics: {
+          contextModule: "fairOrganizerHeader",
+          intent: "followPartner",
+        },
+        mode: "SignUp",
+        options: {
+          afterAuthAction: {
+            action: "follow",
+            kind: "profile",
+            objectId: "faiOrganizerSlug",
+          },
+          title: expect.any(Function),
+        },
+      },
+      legacy: {
+        afterSignUpAction: {
+          action: "follow",
+          kind: "profile",
+          objectId: "faiOrganizerSlug",
+        },
+        contextModule: "fairOrganizerHeader",
+        copy: "Sign up to follow fairOrganizerName",
+        intent: "followPartner",
+        mode: "signup",
+        redirectTo: "http://localhost/",
+      },
+    })
+  })
+
+  it("authenticated users trigger follow mutation on click", () => {
+    mockUseSystemContext.mockImplementation(() => ({
+      mediator: "mediator",
+      relayEnvironment: "relayEnvironment",
+      user: "user",
+    }))
+
+    const wrapper = getWrapper({
+      Profile: () => ({
+        id: "profileId",
+        internalID: "profileInternalID",
+        isFollowed: false,
+      }),
+    })
+
+    wrapper.simulate("click")
+
+    expect(mockFairOrganizerFollowMutation).toHaveBeenCalledWith(
+      "relayEnvironment",
+      {
+        id: "profileId",
+        profileID: "profileInternalID",
+        isFollowed: false,
+      }
+    )
+  })
+})
